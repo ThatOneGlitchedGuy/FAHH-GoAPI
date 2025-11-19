@@ -2,13 +2,16 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"golang-app/internal/config"
 	"golang-app/internal/models"
 	"golang-app/internal/repository"
 	"golang-app/internal/schemas"
 	"golang-app/internal/security"
 	"math"
+	"strings"
 
+	"github.com/patrickmn/go-cache"
 	"gorm.io/gorm"
 )
 
@@ -71,6 +74,11 @@ func (s *productService) ListProducts(page, size int) (*schemas.Page, error) {
 		size = s.config.PageSizeMax
 	}
 
+	cacheKey := fmt.Sprintf("products:page:%d:size:%d", page, size)
+	if cached, found := Cache.Get(cacheKey); found {
+		return cached.(*schemas.Page), nil
+	}
+
 	offset := (page - 1) * size
 	products, total, err := s.productRepo.FindActiveProducts(offset, size)
 	if err != nil {
@@ -93,13 +101,22 @@ func (s *productService) ListProducts(page, size int) (*schemas.Page, error) {
 		Total: total,
 	}
 
-	return &schemas.Page{
+	pageResult := &schemas.Page{
 		Meta:  meta,
 		Items: productOuts,
-	}, nil
+	}
+
+	Cache.Set(cacheKey, pageResult, cache.DefaultExpiration)
+
+	return pageResult, nil
 }
 
 func (s *productService) GetProductByID(id uint) (*schemas.ProductOut, error) {
+	cacheKey := fmt.Sprintf("product:%d", id)
+	if cached, found := Cache.Get(cacheKey); found {
+		return cached.(*schemas.ProductOut), nil
+	}
+
 	product, err := s.productRepo.FindByID(id)
 	if err != nil {
 		return nil, err
@@ -107,7 +124,11 @@ func (s *productService) GetProductByID(id uint) (*schemas.ProductOut, error) {
 	if !product.IsActive {
 		return nil, gorm.ErrRecordNotFound
 	}
-	return s.productToProductOut(product), nil
+
+	productOut := s.productToProductOut(product)
+	Cache.Set(cacheKey, productOut, cache.DefaultExpiration)
+
+	return productOut, nil
 }
 
 func (s *productService) CreateProduct(data *schemas.ProductCreate, agentID uint) (*schemas.ProductOut, error) {
@@ -122,6 +143,14 @@ func (s *productService) CreateProduct(data *schemas.ProductCreate, agentID uint
 	if err := s.productRepo.Create(product); err != nil {
 		return nil, err
 	}
+
+	// Invalidate list cache
+	for key := range Cache.Items() {
+		if strings.HasPrefix(key, "products:page:") {
+			Cache.Delete(key)
+		}
+	}
+
 	return s.productToProductOut(product), nil
 }
 
@@ -147,6 +176,16 @@ func (s *productService) UpdateProduct(productID uint, data *schemas.ProductUpda
 	if err := s.productRepo.Update(product); err != nil {
 		return nil, err
 	}
+
+	// Invalidate caches
+	cacheKey := fmt.Sprintf("product:%d", productID)
+	Cache.Delete(cacheKey)
+	for key := range Cache.Items() {
+		if strings.HasPrefix(key, "products:page:") {
+			Cache.Delete(key)
+		}
+	}
+
 	return s.productToProductOut(product), nil
 }
 
@@ -155,7 +194,21 @@ func (s *productService) DeleteProduct(productID uint, agentID uint) error {
 	if err != nil {
 		return err
 	}
-	return s.productRepo.Delete(product)
+
+	if err := s.productRepo.Delete(product); err != nil {
+		return err
+	}
+
+	// Invalidate caches
+	cacheKey := fmt.Sprintf("product:%d", productID)
+	Cache.Delete(cacheKey)
+	for key := range Cache.Items() {
+		if strings.HasPrefix(key, "products:page:") {
+			Cache.Delete(key)
+		}
+	}
+
+	return nil
 }
 
 func (s *productService) HasUserPurchasedProduct(userID, productID uint) (bool, error) {
