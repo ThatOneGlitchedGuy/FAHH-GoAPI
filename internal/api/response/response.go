@@ -1,7 +1,6 @@
 package response
 
 import (
-	"net/http"
 	"time"
 )
 
