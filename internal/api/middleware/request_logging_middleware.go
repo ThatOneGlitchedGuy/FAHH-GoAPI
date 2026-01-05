@@ -49,11 +49,15 @@ func RequestLoggingMiddleware() gin.HandlerFunc {
 		if len(responseBody) > 5000 {
 			responseBody = responseBody[:5000] + "..."
 		}
+		if len(requestBody) > 5000 {
+			requestBody = requestBody[:5000] + "..."
+		}
 
-		log.Printf("[%s] %s %s - Status: %d - Duration: %dms",
+		log.Printf("[%s] %s %s %s - Status: %d - Duration: %dms",
 			requestID,
 			c.Request.Method,
 			c.Request.RequestURI,
+			requestBody,
 			c.Writer.Status(),
 			duration.Milliseconds(),
 		)
