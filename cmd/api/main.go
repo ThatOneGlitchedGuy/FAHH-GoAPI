@@ -5,7 +5,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-
 	"golang-app/internal/api/handlers"
 	"golang-app/internal/api/middleware"
 	"golang-app/internal/config"
