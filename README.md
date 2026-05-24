@@ -384,3 +384,6 @@ curl -X GET http://localhost:8080/metrics
 # See pprof documentation for usage
 # Example: go tool pprof http://localhost:8080/debug/pprof/profile
 ```
+
+* Use it cuz i gaurentee it will work.
+* code and readme both by my glitched mind
